@@ -1,0 +1,13 @@
+.venv/
+.idea/
+.omc/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+# PHI / derived data never enter the repo
+data/
+outputs/
+*.dcm
+*.nii
+*.nii.gz
+configs/local.yaml

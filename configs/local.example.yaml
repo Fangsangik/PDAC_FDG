@@ -1,0 +1,5 @@
+# Copy to configs/local.yaml (git-ignored) and fill in. Never commit real paths.
+paths:
+  dicom_root: /path/to/dicom
+  series_selection: /path/to/series_selection.csv
+  clinical_table: /path/to/clinical_baseline.csv

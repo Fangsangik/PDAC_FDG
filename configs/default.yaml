@@ -1,0 +1,85 @@
+# All tunable values live here. Code holds no defaults. Values marked TODO need a documented rationale.
+seed: 0
+
+paths:                       # put real paths in a git-ignored local.yaml and pass it as a second -c
+  dicom_root: null           # <dicom_root>/<patient_id>/**.dcm
+  series_selection: null     # CSV: patient_id, ct_series_uid, pet_series_uid  (chosen by a human from list_series.py)
+  clinical_table: null       # CSV with baseline variables + label only
+  derived_root: data/derived
+  outputs_root: outputs
+
+cohort:
+  id_column: patient_id
+  label_column: edf_6mo
+  strata_columns: [edf_6mo, resectability]
+  clinical_columns: [age, sex, resectability, log_ca19_9, ecog, chemo_regimen]
+  categorical: [sex, resectability, ecog, chemo_regimen]
+  extra_columns: []          # loaded but not model inputs (e.g. scanner for harmonisation batch)
+  forbidden_patterns: ["follow", "post_", "_m[0-9]+$", "response", "progress", "recur", "metasta"]
+
+inclusion:
+  ct:  {max_slice_thickness_mm: null}   # TODO: set with rationale; null = no limit
+  pet: {max_slice_thickness_mm: null}
+
+preprocess:
+  orientation: LPS           # SimpleITK native; RAS also accepted
+  spacing_mm: [2.0, 2.0, 2.0]   # TODO: justify (PET native ~3-4 mm; 2 mm = mild upsampling)
+  suv:
+    scan_time_tag: Series    # Series | Acquisition  (QIBA: Series time for decay-corrected-to-START data)
+    liver_normalize: false
+    liver_organ: liver
+
+segmentation:
+  segmenter: {name: totalsegmentator, task: total, extra_args: []}   # e.g. extra_args: ["--fast"]
+  organs: [pancreas, liver, spleen, kidney_left, kidney_right, stomach,
+           vertebrae_T10, vertebrae_T11, vertebrae_T12, vertebrae_L1, vertebrae_L2, vertebrae_L3]
+
+crop:
+  strategy: {name: pancreas_centroid, size_mm: [160, 160, 120], square_xy: true}   # TODO: justify extent
+  # strategy: {name: vertebral_level, top_organ: vertebrae_T10, bottom_organ: vertebrae_L3, xy_size_mm: 200, square_xy: true}
+  # strategy: {name: whole_torso, square_xy: true}
+  fill_value: 0.0
+
+organ_masking:
+  enabled: false
+  organs: [kidney_left, kidney_right, stomach]
+  fill_value: 0.0
+
+projection:
+  projector: {name: ma_mip, rotation_axis: z, projection_axis: y, start_deg: 0, n_angles: 12, span_deg: 180}
+  center: crop_center        # crop_center | mask_centroid
+  center_organ: pancreas
+  channels:
+    - {type: image}
+    # - {type: image, restrict_to: pancreas}
+    # - {type: mask, organ: pancreas}
+
+features:
+  backbone: {name: torchvision, arch: resnet50, weights: IMAGENET1K_V1, input_size: 224,
+             channel_adapter: repeat, intensity_max: 10.0}   # TODO: intensity_max (SUV clip) rationale
+  aggregator: {name: mean}
+  pet_stats:
+    voi_organ: pancreas      # TODO(clinical): organ mask vs lesion VOI
+    mtv_threshold: {type: suv_abs, value: 2.5}   # TODO(clinical): or {type: pct_max, value: 0.4}
+
+harmonization:
+  name: none                 # none | combat (stub) | scn (stub)
+  stage: feature             # feature | model
+  batch_column: null         # e.g. scanner (must be in cohort.extra_columns)
+
+folds:
+  n_splits: 5
+  n_repeats: 1
+  file: data/derived/folds/folds.csv
+
+models:                      # every entry is columns -> impute/scale -> estimator; same fit/predict_proba
+  m0: {columns: [pet_suvmax],                                   estimator: {name: logistic, C: 1.0, max_iter: 1000}, impute: median, scale: standard}
+  m1: {columns: [pet_suvmax, pet_mtv_ml],                       estimator: {name: logistic, C: 1.0, max_iter: 1000}, impute: median, scale: standard}
+  m2: {columns: [pet_suvmax, pet_mtv_ml, "clin_*"],             estimator: {name: logistic, C: 1.0, max_iter: 1000}, impute: median, scale: standard}
+  m3: {columns: ["mip_*"],                                      estimator: {name: logistic, C: 0.1, max_iter: 1000}, impute: median, scale: standard}
+  m4: {columns: ["mip_*", "clin_*"],                            estimator: {name: logistic, C: 0.1, max_iter: 1000}, impute: median, scale: standard}
+
+eval:
+  bootstrap_n: 1000
+  dca_thresholds: [0.05, 0.55, 0.05]   # numpy.arange(start, stop, step)
+  compare: {reference: m2, candidates: [m3, m4]}

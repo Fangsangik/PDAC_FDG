@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fdgmip"
+version = "0.1.0"
+description = "Backbone for baseline FDG PET/CT multi-angle MIP prediction of early distant failure in BR/LA PDAC"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+    "SimpleITK",
+    "pydicom",
+    "nibabel",
+    "scipy",
+    "pandas",
+    "pyarrow",
+    "scikit-learn",
+    "torch",
+    "torchvision",
+    "PyYAML",
+]
+
+[project.optional-dependencies]
+seg = ["TotalSegmentator"]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
